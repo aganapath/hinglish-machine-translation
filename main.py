@@ -1,7 +1,7 @@
 from datasets import load_dataset
-from conllu_data import read_conllu_file
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 from dataset import BertHingDataset
+import torch.nn as nn
 
 ds_train = load_dataset("festvox/cmu_hinglish_dog", split='train')
 
@@ -14,10 +14,38 @@ for t in trans:
     hi_examples.append(t['hi_en'])
 
 tokenizer = AutoTokenizer.from_pretrained("l3cube-pune/hing-bert-lid")
-train_dataset = BertHingDataset(hi_examples, tokenizer, max_length=512)
-
 model = AutoModelForTokenClassification.from_pretrained("l3cube-pune/hing-bert-lid")
+train_dataset = BertHingDataset(hi_examples, tokenizer, max_length=512)
+print(train_dataset[0])
 
+class Encoder(nn.Module):
+    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
+        super(Encoder, self).__init__()
+        self.dropout = nn.Dropout(p)
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+
+        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
+
+    def forward(self, x):
+        return None
+
+class Decoder(nn.Module):
+    def __init__(
+        self, input_size, embedding_size, hidden_size, output_size, num_layers, p
+    ):
+        super(Decoder, self).__init__()
+        self.dropout = nn.Dropout(p)
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+
+        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        return None
 
 ##steps to build model from scratch
 # 1. get parallel corpus and clean - DONE
