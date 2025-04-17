@@ -1,8 +1,15 @@
 from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForTokenClassification
-from dataset import BertHingDataset
-import torch.nn as nn
+from dataset import HingDataset
+from load_embeddings import combine_embeddings_word2indices
+from seq2seq import Encoder, Decoder, Seq2Seq
 
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+import tqdm
+
+
+# load HF hinglish to english parallel corpus
 ds_train = load_dataset("festvox/cmu_hinglish_dog", split='train')
 
 trans = ds_train["translation"]
@@ -13,39 +20,81 @@ for t in trans:
     en_examples.append(t['en'])
     hi_examples.append(t['hi_en'])
 
-tokenizer = AutoTokenizer.from_pretrained("l3cube-pune/hing-bert-lid")
-model = AutoModelForTokenClassification.from_pretrained("l3cube-pune/hing-bert-lid")
-train_dataset = BertHingDataset(hi_examples, tokenizer, max_length=512)
-print(train_dataset[0])
+w2index, embedding_layer = combine_embeddings_word2indices()
+train_data = HingDataset(w2index, hi_examples, en_examples)
 
-class Encoder(nn.Module):
-    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
-        super(Encoder, self).__init__()
-        self.dropout = nn.Dropout(p)
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
+# The following few lines check whether a GPU is available, and if so,
+# they run everything on a GPU which will be much faster.
+device = "cpu"
+if torch.cuda.is_available():
+  device = "cuda"
+print(f"Using {device} device")
 
-        self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
+v_size = w2index["<pad>"] + 1
+h_size = 128
+e_size = 300
 
-    def forward(self, x):
-        return None
+lstm_encoder = Encoder(vocab_size = v_size, embedding_dimension = e_size, hidden_dimension = h_size)
+lstm_encoder.to(device)
+# We use a cross-entropy loss here
+loss_fn = nn.CrossEntropyLoss().to(device)
+# Finally, let's define the optimiser
+optimizer = torch.optim.Adam(lstm_encoder.parameters(), lr=1e-3)
 
-class Decoder(nn.Module):
-    def __init__(
-        self, input_size, embedding_size, hidden_size, output_size, num_layers, p
-    ):
-        super(Decoder, self).__init__()
-        self.dropout = nn.Dropout(p)
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
+# This loads the data for training
+train_dataloader = DataLoader(train_data, batch_size=40, shuffle=True)
 
-        self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
-        self.fc = nn.Linear(hidden_size, output_size)
+# The function for running model training
+def train(model, loss_fn, optimizer, dataloader, epochs=150):
+    # number of times we go through the training data
+    # set the mode of the model to training so that parameters are being updated
+    model.train()
 
-    def forward(self, x):
-        return None
+    for epoch in range(epochs):
+
+        # intialize the loss at the beginning of each epoch
+        epoch_losses = []
+
+        # iterate through all training batches
+        for X, y in tqdm.tqdm(dataloader):
+
+
+            seq_len = X.size(1)
+            batch_len = X.size(0)
+
+            # move the input and the labels to the GPU, if we are using a GPU
+            X = X.to(device)
+            y = y.to(device).flatten()
+            # y = y.to(device)
+
+            # Initialise the hidden representation (this is h0)
+            h = None
+
+            # reset the optimiser
+            optimizer.zero_grad()
+
+            # make predictions using the model
+            output, h = model(X, h)
+            # print("Input shape:", X.shape)       # what goes into model
+            # print("Output shape:", output.shape)     # what comes out
+            # print("Target shape:", y.shape)     # your labels
+
+            # compute the loss for the current predictions
+            loss = loss_fn(output, y)
+            # perform backpropagation
+            loss.backward()
+            # and update the weights
+            optimizer.step()
+
+            # add the loss of the current batch to the loss of the epoch
+            epoch_losses.append(loss.item())
+
+            if len(epoch_losses) % 1000 == 0:
+                print("\nEpoch: {0}, current loss: {1}, ".format(epoch, sum(epoch_losses)/len(epoch_losses)))
+
+
+        # print the loss at the end of every epoch
+        print("\nEpoch: {0}, final loss: {1}, ".format(epoch, sum(epoch_losses)/len(epoch_losses)))
 
 ##steps to build model from scratch
 # 1. get parallel corpus and clean - DONE
