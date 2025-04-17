@@ -1,7 +1,5 @@
 import torch
-
-from torch.utils.data import Dataset, DataLoader
-from transformers import PreTrainedTokenizer
+from torch.utils.data import Dataset
 
 # create a dataset class that will do the following:
 # 1. load the text file and tokenize the sequences of words
