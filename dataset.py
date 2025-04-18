@@ -1,5 +1,7 @@
 import torch
 from torch.utils.data import Dataset
+import fasttext
+
 
 # create a dataset class that will do the following:
 # 1. load the text file and tokenize the sequences of words
