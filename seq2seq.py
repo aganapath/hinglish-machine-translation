@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import random
+import torch.nn.functional as F
+
 
 class Encoder(nn.Module):
 
@@ -31,10 +33,27 @@ class Encoder(nn.Module):
         e = self.embedding_layer(x_transp)
         # e = sequence length x batch_size x embedding dimensions
 
-        lstm_out, (new_hidden, cell) = self.LSTM(e)  # hidden
+        encoder_out, (new_hidden, cell) = self.LSTM(e)  # hidden
 
-        return new_hidden, cell
+        return encoder_out, new_hidden, cell
 
+class BahdanauAttention(nn.Module):
+    def __init__(self, hidden_size):
+        super(BahdanauAttention, self).__init__()
+        self.Wa = nn.Linear(hidden_size, hidden_size)
+        self.Ua = nn.Linear(hidden_size, hidden_size)
+        self.Va = nn.Linear(hidden_size, 1)
+
+    def forward(self, query, keys):
+
+        # query = query.repeat(1, keys.size(1), 1)  # now shape [batch, seq_len, hidden_dim]
+        scores = self.Va(torch.tanh(self.Wa(query) + self.Ua(keys)))  # [batch, seq_len, 1]
+        scores = scores.squeeze(2).unsqueeze(1)
+
+        weights = F.softmax(scores, dim=-1)
+        context = torch.bmm(weights, keys)
+
+        return context, weights
 
 class Decoder(nn.Module):
     def __init__(self, target_vocab_size, embedding_size, hidden_size, num_layers, p):
@@ -44,41 +63,33 @@ class Decoder(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.embedding = nn.Embedding(target_vocab_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
+        self.attention = BahdanauAttention(hidden_size)
+        self.rnn = nn.LSTM(embedding_size + hidden_size, hidden_size, num_layers, dropout=p)
         self.fc = nn.Linear(hidden_size, target_vocab_size)
 
-    def forward(self, x, hidden, cell):
-        """
-        x = single input token from target sentence
-        hidden = last hidden state made by Encoder.forward
-        cell = last cell made by Encoder.forward
-        """
-        # x shape: (N) where N is for batch size, we want it to be (1, N), seq_length
-        # is 1 here because we are sending in a single word and not a sentence
-        x = x.unsqueeze(0)
+    def forward(self, encoder_out, x, hidden, cell):
+        x = x.unsqueeze(0)  # [1, batch_size]
+        embedded = self.dropout(self.embedding(x))  # [1, batch_size, embedding_size]
 
-        embedding = self.dropout(self.embedding(x))
-        # embedding shape: (1, N, embedding_size)
+        # Attention uses last hidden state and encoder output
+        context, _ = self.attention(hidden[-1].unsqueeze(1), encoder_out)  # [batch_size, 1, hidden_size]
+        context = context.permute(1, 0, 2)  # [1, batch_size, hidden_size]
 
-        outputs, (hidden, cell) = self.rnn(embedding, (hidden, cell))
-        # outputs shape: (1, N, hidden_size)
+        # Combine context + embedded input
+        rnn_input = torch.cat((embedded, context), dim=2)  # [1, batch_size, embedding_size + hidden_size]
 
-        predictions = self.fc(outputs)
-
-        # predictions shape: (1, N, length_target_vocabulary) to send it to
-        # loss function we want it to be (N, length_target_vocabulary) so we're
-        # just gonna remove the first dim
-        # possibly need to execute this before running output through self.fc (the linear layer)
-        predictions = predictions.squeeze(0)
+        outputs, (hidden, cell) = self.rnn(rnn_input, (hidden, cell))  # output: [1, batch, hidden]
+        predictions = self.fc(outputs.squeeze(0))  # [batch, vocab_size]
 
         return predictions, hidden, cell
 
 
 class Seq2Seq(nn.Module):
-    def __init__(self, encoder, decoder):
+    def __init__(self, encoder, decoder, device):
         super().__init__() # Seq2Seq, self
         self.encoder = encoder
         self.decoder = decoder
+        self.device = device
         # self.word_to_index = word_to_index
 
     def forward(self, source, target, teacher_force_ratio=0.5):
@@ -86,17 +97,17 @@ class Seq2Seq(nn.Module):
         target_len = target.shape[0]
         target_vocab_size = self.decoder.target_vocab_size
 
-        outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(device)
+        outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(self.device)
 
         # source = source.permute(1, 0)  # [seq_len, batch_size] → [batch_size, seq_len]
-        hidden, cell = self.encoder(source)
+        encoder_out, hidden, cell = self.encoder(source)
 
         # Grab the first input to the Decoder which will be <SOS> token
         x = target[0]
 
         for t in range(1, target_len):
             # Use previous hidden, cell as context from encoder at start
-            output, hidden, cell = self.decoder(x, hidden, cell)
+            output, hidden, cell = self.decoder(encoder_out, x, hidden, cell)
 
             # Store next output prediction
             outputs[t] = output

@@ -1,8 +1,8 @@
 from datasets import load_dataset
 from dataset import HingDataset
-from load_embeddings import combine_embeddings_word2indices
-from seq2seq import Encoder, Decoder, Seq2Seq
+# from load_embeddings import combine_embeddings_word2indices
 
+from seq2seq import Encoder, Decoder, Seq2Seq
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -30,14 +30,17 @@ from torchtext import vocab
 fasttext_hi = vocab.Vectors(name='wiki.hi.align.vec', url='https://dl.fbaipublicfiles.com/fasttext/vectors-aligned/wiki.hi.align.vec')
 fasttext_en = vocab.Vectors(name='wiki.en.align.vec', url='https://dl.fbaipublicfiles.com/fasttext/vectors-aligned/wiki.en.align.vec')
 
-train_data = HingDataset(w2index, hi_examples, en_examples)
+train_data = HingDataset(hi_examples_train, en_examples_train)
 
 # The following few lines check whether a GPU is available, and if so,
-# they run everything on a GPU which will be much faster.
-device = "cpu"
-if torch.cuda.is_available():
-  device = "cuda"
-print(f"Using {device} device")
+# they run everything on a GPU which will be much faster. Use if running in the cloud
+# device = "cpu"
+# if torch.cuda.is_available():
+#   device = "cuda"
+# print(f"Using {device} device")
+
+# use this statement if running on machine
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 train_data = HingDataset(hi_examples_train, en_examples_train)
 valid_data = HingDataset(hi_examples_valid, en_examples_valid)
@@ -61,17 +64,18 @@ lstm_encoder.to(device)
 lstm_decoder = Decoder(target_vocab_size=input_size_decoder, embedding_size=e_size, hidden_size=h_size, num_layers=n_layers, p=dec_dropout)
 lstm_decoder.to(device)
 
-model = Seq2Seq(lstm_encoder, lstm_decoder)
+model = Seq2Seq(lstm_encoder, lstm_decoder, device)
 model.to(device)
+
 # We use a cross-entropy loss here
 loss_fn = nn.CrossEntropyLoss().to(device)
 # Finally, let's define the optimiser
 optimizer = torch.optim.Adam(lstm_encoder.parameters(), lr=1e-3)
 
 # This loads the data for training
-train_dataloader = DataLoader(train_data, batch_size=20, shuffle=True)
-valid_dataloader = DataLoader(valid_data, batch_size=20, shuffle=True)
-test_dataloader = DataLoader(test_data, batch_size=20, shuffle=True)
+train_dataloader = DataLoader(train_data, batch_size=32, shuffle=True)
+valid_dataloader = DataLoader(valid_data, batch_size=32, shuffle=True)
+test_dataloader = DataLoader(test_data, batch_size=32, shuffle=True)
 
 
 # The function for running model training
@@ -98,7 +102,6 @@ def train(model, loss_fn, optimizer, dataloader, epochs=100):
             # move the input and the labels to the GPU, if we are using a GPU
             X = X.to(device)
             y = y.to(device)  # .flatten()
-            # y = y.to(device)
 
             # Initialise the hidden representation (this is h0)
             h = None
@@ -134,7 +137,7 @@ def train(model, loss_fn, optimizer, dataloader, epochs=100):
         # print the loss at the end of every epoch
         print("\nEpoch: {0}, final loss: {1}, ".format(epoch, train_loss))
 
-train(model, loss_fn, optimizer, train_dataloader, epochs=1)
+train(model, loss_fn, optimizer, train_dataloader, epochs=2)
 
 ##steps to build model from scratch
 # 1. get parallel corpus and clean - DONE
