@@ -1,0 +1,5 @@
+torch==2.2.2
+tqdm==4.67.1
+datasets==3.4.1
+torchtext==0.17.2
+numpy==2.2.4
