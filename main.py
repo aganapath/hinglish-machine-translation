@@ -7,25 +7,36 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import tqdm
+from torchtext import vocab
 
-ds_train = load_dataset("festvox/cmu_hinglish_dog", split='train')
-ds_valid = load_dataset("festvox/cmu_hinglish_dog", split='validation')
-ds_test = load_dataset("festvox/cmu_hinglish_dog", split='test')
+# ds_train = load_dataset("festvox/cmu_hinglish_dog", split='train')
+# ds_valid = load_dataset("festvox/cmu_hinglish_dog", split='validation')
+# ds_test = load_dataset("festvox/cmu_hinglish_dog", split='test')
+#
+# train_trans = ds_train["translation"]
+# valid_trans = ds_valid["translation"]
+# test_trans = ds_test["translation"]
+#
+# en_examples_train = [t['en'] for t in train_trans]
+# hi_examples_train = [t['hi_en'] for t in train_trans]
+# en_examples_valid = [t['en'] for t in valid_trans]
+# hi_examples_valid = [t['hi_en'] for t in valid_trans]
+# en_examples_test = [t['en'] for t in test_trans]
+# hi_examples_test = [t['hi_en'] for t in test_trans]
 
-train_trans = ds_train["translation"]
-valid_trans = ds_valid["translation"]
-test_trans = ds_test["translation"]
+hing_ds = load_dataset("findnitai/english-to-hinglish")
+hing_ds = hing_ds['train']
+hing_ds_split = hing_ds.train_test_split(test_size=0.05)
 
-en_examples_train = [t['en'] for t in train_trans]
-hi_examples_train = [t['hi_en'] for t in train_trans]
-en_examples_valid = [t['en'] for t in valid_trans]
-hi_examples_valid = [t['hi_en'] for t in valid_trans]
-en_examples_test = [t['en'] for t in test_trans]
-hi_examples_test = [t['hi_en'] for t in test_trans]
+train_trans = hing_ds_split["train"]
+test_trans = hing_ds_split["test"]
+
+hi_en_train_trans = train_trans["translation"]
+
+en_examples_train = [t['en'] for t in hi_en_train_trans]
+hi_examples_train = [t['hi_ng'] for t in hi_en_train_trans]
 
 # w2index, embedding_layer = combine_embeddings_word2indices()
-
-from torchtext import vocab
 
 fasttext_hi = vocab.Vectors(name='wiki.hi.align.vec', url='https://dl.fbaipublicfiles.com/fasttext/vectors-aligned/wiki.hi.align.vec')
 fasttext_en = vocab.Vectors(name='wiki.en.align.vec', url='https://dl.fbaipublicfiles.com/fasttext/vectors-aligned/wiki.en.align.vec')
@@ -43,8 +54,8 @@ train_data = HingDataset(hi_examples_train, en_examples_train)
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 train_data = HingDataset(hi_examples_train, en_examples_train)
-valid_data = HingDataset(hi_examples_valid, en_examples_valid)
-test_data = HingDataset(hi_examples_test, en_examples_test)
+# valid_data = HingDataset(hi_examples_valid, en_examples_valid)
+# test_data = HingDataset(hi_examples_test, en_examples_test)
 
 hing_vocab = train_data.in_vocab
 eng_vocab = train_data.out_vocab
@@ -54,7 +65,7 @@ input_size_decoder = len(eng_vocab)
 
 h_size = 128
 e_size = 300
-b_size = 2
+b_size = 32
 n_layers = 2
 enc_dropout = 0.2
 dec_dropout = 0.2
@@ -75,8 +86,8 @@ optimizer = torch.optim.Adam(lstm_encoder.parameters(), lr=1e-3)
 
 # This loads the data for training
 train_dataloader = DataLoader(train_data, batch_size=b_size, shuffle=True)
-valid_dataloader = DataLoader(valid_data, batch_size=b_size, shuffle=True)
-test_dataloader = DataLoader(test_data, batch_size=b_size, shuffle=True)
+# valid_dataloader = DataLoader(valid_data, batch_size=b_size, shuffle=True)
+# test_dataloader = DataLoader(test_data, batch_size=b_size, shuffle=True)
 
 
 # The function for running model training
@@ -138,7 +149,7 @@ def train(model, loss_fn, optimizer, dataloader, epochs=100):
         # print the loss at the end of every epoch
         print("\nEpoch: {0}, final loss: {1}, ".format(epoch, train_loss))
 
-train(model, loss_fn, optimizer, train_dataloader, epochs=20)
+train(model, loss_fn, optimizer, train_dataloader, epochs=1)
 
 torch.save(model.state_dict(), '/Users/anjaniganapathy/PycharmProjects/hinglish-machine-translation/hinglish_model.pt')
 
