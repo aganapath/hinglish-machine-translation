@@ -54,6 +54,7 @@ input_size_decoder = len(eng_vocab)
 
 h_size = 128
 e_size = 300
+b_size = 2
 n_layers = 2
 enc_dropout = 0.2
 dec_dropout = 0.2
@@ -73,9 +74,9 @@ loss_fn = nn.CrossEntropyLoss().to(device)
 optimizer = torch.optim.Adam(lstm_encoder.parameters(), lr=1e-3)
 
 # This loads the data for training
-train_dataloader = DataLoader(train_data, batch_size=32, shuffle=True)
-valid_dataloader = DataLoader(valid_data, batch_size=32, shuffle=True)
-test_dataloader = DataLoader(test_data, batch_size=32, shuffle=True)
+train_dataloader = DataLoader(train_data, batch_size=b_size, shuffle=True)
+valid_dataloader = DataLoader(valid_data, batch_size=b_size, shuffle=True)
+test_dataloader = DataLoader(test_data, batch_size=b_size, shuffle=True)
 
 
 # The function for running model training
@@ -137,7 +138,9 @@ def train(model, loss_fn, optimizer, dataloader, epochs=100):
         # print the loss at the end of every epoch
         print("\nEpoch: {0}, final loss: {1}, ".format(epoch, train_loss))
 
-train(model, loss_fn, optimizer, train_dataloader, epochs=2)
+train(model, loss_fn, optimizer, train_dataloader, epochs=20)
+
+torch.save(model.state_dict(), '/Users/anjaniganapathy/PycharmProjects/hinglish-machine-translation/hinglish_model.pt')
 
 ##steps to build model from scratch
 # 1. get parallel corpus and clean - DONE
